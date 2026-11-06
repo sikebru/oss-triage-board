@@ -1,10 +1,10 @@
-const API = "https://api.github.com";
-const STALE_DAYS = 14;
+const API = TriageCore.API_ORIGIN;
 const form = document.querySelector("#repo-form");
 const input = document.querySelector("#repo-input");
 const button = document.querySelector("#load-button");
 const statusBox = document.querySelector("#status");
 const dashboard = document.querySelector("#dashboard");
+const LAST_SCAN_KEY = "oss-triage-board:last-successful-scan";
 
 function setStatus(message, type = "") {
   statusBox.textContent = message;
@@ -14,26 +14,25 @@ function setStatus(message, type = "") {
 function parseRepo(value) {
   const cleaned = value.trim().replace(/^https?:\/\/github\.com\//i, "").replace(/\/+$/, "");
   const parts = cleaned.split("/");
-  if (parts.length !== 2 || !parts[0] || !parts[1] || parts.some(p => p.includes("?") || p.includes("#"))) {
+  if (parts.length !== 2 || parts.some(part => !part || /[?#\s]/.test(part)) || !/^[\w.-]+$/.test(parts[0]) || !/^[\w.-]+$/.test(parts[1])) {
     throw new Error("Enter a repository as owner/name, or paste its github.com URL.");
   }
   return parts.map(encodeURIComponent);
 }
 
-async function githubGet(path) {
-  const response = await fetch(`${API}${path}`, {
-    headers: { "Accept": "application/vnd.github+json", "X-GitHub-Api-Version": "2022-11-28" }
-  });
-  if (response.status === 404) throw new Error("Repository not found, or it isn't public. Check the owner and repository name.");
-  if (response.status === 403 || response.status === 429) {
-    throw new Error("GitHub's unauthenticated API rate limit may have been reached. Wait a while and try again.");
-  }
-  if (!response.ok) throw new Error(`GitHub returned HTTP ${response.status}. Please try again.`);
-  return response.json();
+function escapeQuery(value) { return encodeURIComponent(value); }
+
+async function githubCount(query) {
+  const { body } = await TriageCore.fetchJson(`${API}/search/issues?q=${escapeQuery(query)}&per_page=1`, fetch);
+  if (!Number.isInteger(body.total_count)) throw new Error("GitHub did not provide a total count.");
+  return body.total_count;
 }
 
-function ageInDays(dateString) {
-  return Math.floor((Date.now() - new Date(dateString).getTime()) / 86400000);
+function ageLabel(dateString) {
+  const updated = Date.parse(dateString);
+  if (!Number.isFinite(updated)) return "Updated date unavailable";
+  const days = Math.max(0, Math.floor((Date.now() - updated) / TriageCore.DAY_MS));
+  return `Updated ${days} day${days === 1 ? "" : "s"} ago`;
 }
 
 function makePill(text, warning = false) {
@@ -44,14 +43,14 @@ function makePill(text, warning = false) {
 }
 
 function renderItem(item) {
-  const isPR = Boolean(item.pull_request);
-  const age = ageInDays(item.updated_at);
+  const isPR = TriageCore.isPullRequest(item);
+  const quiet = TriageCore.isQuiet(item);
   const card = document.createElement("article");
   card.className = "issue-card";
-
   const symbol = document.createElement("span");
   symbol.className = `item-symbol ${isPR ? "pr" : ""}`;
   symbol.textContent = isPR ? "⑂" : "#";
+  symbol.setAttribute("aria-label", isPR ? "Pull request" : "Issue");
   card.append(symbol);
 
   const main = document.createElement("div");
@@ -61,53 +60,84 @@ function renderItem(item) {
   link.href = item.html_url;
   link.target = "_blank";
   link.rel = "noopener noreferrer";
-  link.textContent = item.title;
+  link.textContent = item.title || "Untitled item";
   main.append(link);
-
   const meta = document.createElement("div");
   meta.className = "item-meta";
   meta.append(document.createTextNode(`${isPR ? "Pull request" : "Issue"} #${item.number}`));
-  meta.append(document.createTextNode(`Updated ${age} day${age === 1 ? "" : "s"} ago`));
-  if (age >= STALE_DAYS) meta.append(makePill("Quiet 14+ days", true));
-  (item.labels || []).slice(0, 3).forEach(label => meta.append(makePill(label.name)));
+  meta.append(document.createTextNode(ageLabel(item.updated_at)));
+  if (quiet) meta.append(makePill("Quiet 14+ days", true));
+  (item.labels || []).forEach(label => {
+    if (label && label.name) meta.append(makePill(label.name));
+  });
   main.append(meta);
   card.append(main);
   return card;
 }
 
-function renderDashboard(repo, items) {
-  const issues = items.filter(item => !item.pull_request);
-  const prs = items.filter(item => item.pull_request);
-  const stale = items.filter(item => ageInDays(item.updated_at) >= STALE_DAYS);
-  const starter = issues.filter(item => (item.labels || []).some(label =>
-    ["good first issue", "help wanted"].includes(label.name.toLowerCase())
-  ));
+function setCount(id, count) {
+  document.querySelector(`#${id}`).textContent = Number.isInteger(count) ? count.toLocaleString() : "Unavailable";
+}
 
-  document.querySelector("#repo-name").textContent = `${repo.full_name}`;
+function renderDashboard(repo, scan, totals) {
+  const issues = scan.items.filter(item => !TriageCore.isPullRequest(item));
+  const prs = scan.items.filter(TriageCore.isPullRequest);
+  const quietIssues = issues.filter(item => TriageCore.isQuiet(item));
+  const quietPrs = prs.filter(item => TriageCore.isQuiet(item));
+  const goodFirst = issues.filter(item => TriageCore.hasLabel(item, "good first issue"));
+  const helpWanted = issues.filter(item => TriageCore.hasLabel(item, "help wanted"));
+
+  document.querySelector("#repo-name").textContent = repo.full_name;
   document.querySelector("#repo-description").textContent = repo.description || "No repository description provided.";
-  const repoLink = document.querySelector("#repo-link");
-  repoLink.href = repo.html_url;
-  document.querySelector("#issue-count").textContent = issues.length.toLocaleString();
-  document.querySelector("#pr-count").textContent = prs.length.toLocaleString();
-  document.querySelector("#stale-count").textContent = stale.length.toLocaleString();
-  document.querySelector("#starter-count").textContent = starter.length.toLocaleString();
+  document.querySelector("#repo-link").href = repo.html_url;
+  setCount("total-issue-count", totals.issues);
+  setCount("total-pr-count", totals.prs);
+  setCount("issue-count", issues.length);
+  setCount("pr-count", prs.length);
+  setCount("quiet-issue-count", quietIssues.length);
+  setCount("quiet-pr-count", quietPrs.length);
+  setCount("starter-count", goodFirst.length);
+  setCount("help-wanted-count", helpWanted.length);
+
+  const totalNote = document.querySelector("#totals-note");
+  totalNote.textContent = Number.isInteger(totals.issues) && Number.isInteger(totals.prs)
+    ? "Totals from GitHub issue search; analyzed counts below are from this scan."
+    : `Exact totals unavailable: ${totals.error || "GitHub did not provide separate counts."}`;
+  const scanNote = document.querySelector("#scan-state");
+  scanNote.className = `scan-state ${scan.complete ? "complete" : "partial"}`;
+  scanNote.textContent = scan.complete
+    ? `Complete scan · ${scan.items.length.toLocaleString()} unique open items analyzed across ${scan.pages} page${scan.pages === 1 ? "" : "s"}.`
+    : `Partial scan · ${scan.items.length.toLocaleString()} unique open items analyzed across ${scan.pages} page${scan.pages === 1 ? "" : "s"}. ${scan.reason}`;
 
   const list = document.querySelector("#items-list");
   list.replaceChildren();
-  const prioritized = [...stale, ...starter.filter(item => !stale.includes(item))]
-    .filter((item, index, arr) => arr.findIndex(other => other.id === item.id) === index)
-    .slice(0, 12);
-
-  document.querySelector("#result-count").textContent = `${prioritized.length} suggested items`;
-  if (!prioritized.length) {
+  const queue = TriageCore.deduplicateItems(scan.items)
+    .filter(item => TriageCore.hasLabel(item, "good first issue") || TriageCore.hasLabel(item, "help wanted") || TriageCore.isQuiet(item))
+    .sort((a, b) => {
+      const aNew = TriageCore.hasLabel(a, "good first issue") || TriageCore.hasLabel(a, "help wanted");
+      const bNew = TriageCore.hasLabel(b, "good first issue") || TriageCore.hasLabel(b, "help wanted");
+      if (aNew !== bNew) return aNew ? -1 : 1;
+      return Date.parse(a.updated_at || 0) - Date.parse(b.updated_at || 0);
+    }).slice(0, 12);
+  document.querySelector("#result-count").textContent = `${queue.length} suggested of ${scan.items.length} analyzed`;
+  if (!queue.length) {
     const empty = document.createElement("div");
     empty.className = "empty";
-    empty.textContent = "No quiet or newcomer-labelled open items found in the latest results.";
+    empty.textContent = scan.items.length ? "No quiet or newcomer-labelled open items found in the analyzed results." : "No open issues or pull requests found.";
     list.append(empty);
-  } else {
-    prioritized.forEach(item => list.append(renderItem(item)));
-  }
+  } else queue.forEach(item => list.append(renderItem(item)));
+
+  const lastScan = document.querySelector("#last-scan");
+  lastScan.textContent = `Last successful scan: ${new Date().toLocaleString()}`;
+  try { localStorage.setItem(LAST_SCAN_KEY, JSON.stringify({ repo: repo.full_name, at: new Date().toISOString() })); } catch (_) { /* storage may be disabled */ }
   dashboard.classList.remove("hidden");
+}
+
+function showPreviousScan() {
+  try {
+    const previous = JSON.parse(localStorage.getItem(LAST_SCAN_KEY));
+    if (previous && previous.at) document.querySelector("#last-scan").textContent = `Last successful scan: ${new Date(previous.at).toLocaleString()} (${previous.repo})`;
+  } catch (_) { /* storage may be disabled or contain invalid data */ }
 }
 
 async function analyze(value) {
@@ -116,33 +146,38 @@ async function analyze(value) {
   catch (error) { setStatus(error.message, "error"); return; }
 
   button.disabled = true;
-  button.textContent = "Analyzing…";
+  button.innerHTML = '<span class="spinner" aria-hidden="true"></span> Scanning…';
   dashboard.classList.add("hidden");
-  setStatus("Fetching public repository details and open items…");
+  document.querySelector("#loading-indicator").classList.remove("hidden");
+  setStatus("Fetching repository details, open items and GitHub totals…", "loading");
   try {
     const base = `/repos/${owner}/${repoName}`;
-    const [repo, items] = await Promise.all([
-      githubGet(base),
-      githubGet(`${base}/issues?state=open&per_page=100&sort=created&direction=asc`)
+    const { body: repo } = await TriageCore.fetchJson(`${API}${base}`, fetch);
+    const initial = `${API}${base}/issues?state=open&sort=updated&direction=desc&per_page=${TriageCore.PAGE_SIZE}&page=1`;
+    const [scan, issueCount, prCount] = await Promise.all([
+      TriageCore.fetchAllOpenItems(initial, { fetchImpl: fetch }),
+      githubCount(`repo:${repo.full_name} is:open is:issue`).then(count => ({ count })).catch(error => ({ error: error.message })),
+      githubCount(`repo:${repo.full_name} is:open is:pr`).then(count => ({ count })).catch(error => ({ error: error.message }))
     ]);
-    renderDashboard(repo, items);
-    setStatus(`Analysis loaded for ${repo.full_name}.`, "success");
+    const totals = { issues: issueCount.count, prs: prCount.count, error: issueCount.error || prCount.error };
+    renderDashboard(repo, scan, totals);
+    if (!scan.complete) {
+      const rateLimit = /rate limit/i.test(scan.reason);
+      setStatus(`${rateLimit ? "Rate-limit warning" : "Partial data warning"}: ${scan.reason} Successfully fetched pages are included below.`, rateLimit ? "warning" : "partial");
+    } else if (!Number.isInteger(totals.issues) || !Number.isInteger(totals.prs)) {
+      const rateLimit = /rate limit/i.test(totals.error || "");
+      setStatus(`${rateLimit ? "Rate-limit warning" : "Count limitation"}: scanned item data is available, but one or more exact totals could not be retrieved.`, rateLimit ? "warning" : "partial");
+    } else setStatus(`Analysis loaded for ${repo.full_name}.`, "success");
   } catch (error) {
-    setStatus(error.message, "error");
+    const rateLimit = error.kind === "rate-limit";
+    setStatus(`${rateLimit ? "GitHub API rate limit reached. " : ""}${error.message}`, rateLimit ? "warning" : "error");
   } finally {
+    document.querySelector("#loading-indicator").classList.add("hidden");
     button.disabled = false;
     button.innerHTML = 'Analyze repository <span aria-hidden="true">→</span>';
   }
 }
 
-form.addEventListener("submit", event => {
-  event.preventDefault();
-  analyze(input.value);
-});
-
-document.querySelectorAll("[data-example]").forEach(example => {
-  example.addEventListener("click", () => {
-    input.value = example.dataset.example;
-    analyze(input.value);
-  });
-});
+form.addEventListener("submit", event => { event.preventDefault(); analyze(input.value); });
+document.querySelectorAll("[data-example]").forEach(example => example.addEventListener("click", () => { input.value = example.dataset.example; analyze(input.value); }));
+showPreviousScan();

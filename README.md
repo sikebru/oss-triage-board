@@ -2,77 +2,47 @@
 
 A lightweight, read-only dashboard for understanding the public GitHub issues and pull requests that may need maintainer attention.
 
-**Status:** Early preview (v0.1.0) · **License:** MIT
+**Status:** Early preview · **License:** MIT
 
-## Why this exists
-
-Small open-source projects often have limited maintainer time. Open issues and pull requests can become difficult to scan, and first-time contributors may struggle to find approachable work.
-
-OSS Triage Board gives maintainers a quick overview without changing anything in their repository.
-
-## Current features
+## Features
 
 - Analyze a public GitHub repository using `owner/name` or its GitHub URL.
-- Show open issue and pull-request counts.
-- Identify open items that have not been updated in 14 days.
-- Count issues labelled `good first issue` or `help wanted`.
-- Link every suggested item to its original GitHub page.
-- No login, token, backend, database, or paid API key required.
+- Separately show GitHub-reported open issue and pull-request totals and counts actually analyzed.
+- Fetch open items sorted by most recently updated, following GitHub pagination links (with a safe query-page fallback).
+- Identify quiet issues and PRs using their `updated_at` timestamp and a 14-day threshold.
+- Count `good first issue` and `help wanted` labels case-insensitively.
+- Prioritize newcomer-friendly items and quiet items in a deduplicated action queue.
+- Report complete versus partial scans, preserve successfully retrieved pages after later failures, and describe rate limits and other errors.
+- No login, token, backend, database, build step, dependency, or paid API key required.
 
 ## Run locally
 
-1. Download or clone this repository.
-2. Open `index.html` in a modern browser.
+Open `index.html` in a browser. If local-file API requests are blocked, run `python -m http.server 8000` and visit `http://localhost:8000`.
 
-If your browser blocks API requests from a local file, serve the folder with any static web server. For example, with Python installed:
+## Tests
+
+Requires Node.js (no installed packages):
 
 ```bash
-python -m http.server 8000
+node --test tests/triage-core.test.js
+node --check app.js
+node --check triage-core.js
 ```
-
-Then open `http://localhost:8000`.
 
 ## Deploy with GitHub Pages
 
-1. Push this repository to GitHub.
-2. Open **Settings → Pages**.
-3. Under Build and deployment, choose **Deploy from a branch**.
-4. Select `main` and `/ (root)`, then save.
-5. Wait for the Pages URL to appear.
+Select the repository root as the GitHub Pages source. No build step is required.
 
-No build step is required.
+## Data and limitations
 
-## How it works
+The app calls GitHub's public REST API from the browser. The open items endpoint is paginated, sorted by `updated` descending, and scanned up to a safety limit of 10 pages (1,000 items) per run to avoid unbounded requests. Scans reaching that cap are explicitly marked partial. If a later page fails, earlier fetched pages remain visible with a clear partial warning. Exact issue and PR totals are requested separately from GitHub's issue-search endpoint; if GitHub does not return a total, the UI says the total is unavailable rather than substituting a fetched count. Search results and unauthenticated API calls are subject to GitHub limits and API availability.
 
-The app calls GitHub's public REST API from the browser:
-
-- `GET /repos/{owner}/{repo}`
-- `GET /repos/{owner}/{repo}/issues?state=open&per_page=100`
-
-GitHub's issues endpoint also returns pull requests. The app separates them using the `pull_request` field.
-
-## Important limitations
-
-- Only public repositories are supported.
-- The app requests at most 100 open items in this first version; busy repositories may have more.
-- Unauthenticated GitHub API requests have rate limits. If the limit is reached, wait and retry.
-- “Quiet for 14+ days” means the item's `updated_at` timestamp is at least 14 days old. It does not mean the item is abandoned.
-- “Good first issues” is based only on the exact `good first issue` and `help wanted` label names.
-- Counts and recommendations are a triage aid, not a complete measure of repository health.
-- The app is read-only. It does not create, edit, label, close, or comment on GitHub items.
+Only public repositories are supported. “Quiet” means the item's `updated_at` is at least 14 days old; it does not mean abandoned. The last successful scan time is stored locally in the browser. The app is read-only and does not change repository data.
 
 ## Privacy
 
-The repository name you enter is sent to GitHub's public API from your browser. The app does not send it to a separate OSS Triage Board server because no such server exists in this version. Do not enter private repository URLs or secrets.
+The repository name is sent directly from your browser to GitHub's public API. The app has no separate server and does not transmit the input elsewhere.
 
-## Contributing
+## Contributing and license
 
-See [CONTRIBUTING.md](CONTRIBUTING.md). Bug reports and focused pull requests are welcome.
-
-## Roadmap
-
-See [ROADMAP.md](ROADMAP.md) for planned work. Roadmap items are proposals, not shipped features.
-
-## License
-
-MIT. See [LICENSE](LICENSE).
+See [CONTRIBUTING.md](CONTRIBUTING.md). MIT; see [LICENSE](LICENSE).

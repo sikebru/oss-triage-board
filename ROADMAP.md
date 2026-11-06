@@ -1,33 +1,25 @@
 # Roadmap
 
-This roadmap describes possible work. A feature is not shipped until it exists, is tested, and is documented.
+This roadmap describes possible work. A feature is not shipped until it exists, is tested, and documented.
 
-## v0.1.0 — first public preview
+## Current preview
 
-- [x] Analyze a public GitHub repository
-- [x] Show open issues and pull requests
-- [x] Flag items quiet for 14+ days
-- [x] Count newcomer-labelled issues
+- [x] Analyze public GitHub repositories with recent-updated issue triage
+- [x] Paginate with safe stopping and retain partial results on failure
+- [x] Separate issue and pull-request totals and analyzed counts
+- [x] Flag quiet items and newcomer labels
 - [x] Keep the app read-only and browser-based
+- [x] Unit tests for classification, labels, quiet calculations, pagination, rate limits, partial scans and duplicate prevention
 
 ## Next candidates
 
-- [ ] Pagination so repositories with more than 100 open items are covered
-- [ ] Filters for issues, pull requests, labels, and age
+- [ ] Optional filters for issues, pull requests, labels, and age
 - [ ] Configurable quiet-period threshold
-- [ ] Better handling of GitHub API rate-limit headers
 - [ ] Export a shareable Markdown triage report
-- [ ] Unit tests for sorting, filtering, and age calculations
 - [ ] Accessibility review and keyboard-navigation improvements
 
-## Later, only if maintainers need it
-
-- [ ] Optional authenticated mode with narrowly scoped GitHub permissions
-- [ ] Saved repository list stored locally in the browser
-- [ ] Maintainer-defined triage rules
-
-## Non-goals for the first versions
+## Non-goals
 
 - Automatically closing issues or merging pull requests
 - Sending repository data to an AI service by default
-- Claiming to measure whether a project is healthy or abandoned
+- Claiming to measure project health or abandonment
