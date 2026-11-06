@@ -1,0 +1,73 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="description" content="A lightweight, read-only dashboard for understanding the public GitHub issues and pull requests that need attention.">
+  <meta name="theme-color" content="#101827">
+  <title>OSS Triage Board</title>
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+  <header class="topbar">
+    <a class="brand" href="./" aria-label="OSS Triage Board home">
+      <span class="brand-mark">OT</span>
+      <span>OSS Triage Board</span>
+    </a>
+    <span class="read-only">READ-ONLY · PUBLIC REPOSITORIES</span>
+  </header>
+
+  <main class="container">
+    <section class="hero">
+      <p class="eyebrow">OPEN-SOURCE MAINTAINER TOOLKIT</p>
+      <h1>See what needs<br><span>your attention.</span></h1>
+      <p class="intro">A simple, read-only overview of open issues and pull requests in any public GitHub repository. No account or token required.</p>
+      <form id="repo-form" class="search-form">
+        <label class="sr-only" for="repo-input">GitHub repository</label>
+        <input id="repo-input" name="repo" type="text" placeholder="owner/repository  e.g. octocat/Hello-World" autocomplete="off" required>
+        <button type="submit" id="load-button">Analyze repository <span aria-hidden="true">→</span></button>
+      </form>
+      <p class="hint">Try <button class="text-button" type="button" data-example="vercel/next.js">vercel/next.js</button> or <button class="text-button" type="button" data-example="vitejs/vite">vitejs/vite</button>.</p>
+      <div id="status" class="status" role="status" aria-live="polite">Enter a public repository to get started.</div>
+    </section>
+
+    <section id="dashboard" class="dashboard hidden" aria-label="Repository analysis">
+      <div class="repo-heading">
+        <div>
+          <p class="eyebrow">REPOSITORY OVERVIEW</p>
+          <h2 id="repo-name">—</h2>
+          <p id="repo-description" class="repo-description"></p>
+        </div>
+        <a id="repo-link" class="github-link" href="#" target="_blank" rel="noopener noreferrer">View on GitHub ↗</a>
+      </div>
+
+      <div class="stats-grid">
+        <article class="stat-card"><span class="stat-label">Open issues</span><strong id="issue-count">—</strong><span class="stat-note">Excludes pull requests</span></article>
+        <article class="stat-card"><span class="stat-label">Open pull requests</span><strong id="pr-count">—</strong><span class="stat-note">Awaiting a decision</span></article>
+        <article class="stat-card"><span class="stat-label">Quiet for 14+ days</span><strong id="stale-count">—</strong><span class="stat-note">Issues and PRs by last update</span></article>
+        <article class="stat-card"><span class="stat-label">Good first issues</span><strong id="starter-count">—</strong><span class="stat-note">Newcomer-friendly label</span></article>
+      </div>
+
+      <div class="section-heading">
+        <div><p class="eyebrow">ACTION QUEUE</p><h3>Items to look at</h3></div>
+        <span id="result-count" class="result-count"></span>
+      </div>
+      <div id="items-list" class="items-list"></div>
+      <p class="footnote">This is a triage aid, not a judgement of project health. “Quiet” means not updated in the last 14 days; it does not automatically mean abandoned. Results are limited to the latest 100 open items returned by GitHub.</p>
+    </section>
+
+    <section class="how-it-works">
+      <p class="eyebrow">BUILT FOR MAINTAINERS</p>
+      <h2>Useful signal. No noisy automation.</h2>
+      <div class="feature-grid">
+        <article><span class="feature-icon">◎</span><h3>Read-only by design</h3><p>It reads public repository data. It never creates, edits, labels, closes, or comments on GitHub issues.</p></article>
+        <article><span class="feature-icon">↗</span><h3>Evidence you can inspect</h3><p>Every result links back to its original GitHub issue or pull request.</p></article>
+        <article><span class="feature-icon">⌁</span><h3>No API key needed</h3><p>Uses GitHub's public REST API. Unauthenticated requests are subject to GitHub's rate limits.</p></article>
+      </div>
+    </section>
+  </main>
+
+  <footer><span>OSS Triage Board · Early preview</span><span>Open source · MIT License</span></footer>
+  <script src="app.js"></script>
+</body>
+</html>
